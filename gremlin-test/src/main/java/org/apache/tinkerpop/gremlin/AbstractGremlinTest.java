@@ -170,6 +170,10 @@ public abstract class AbstractGremlinTest {
         return convertToVertex(graph, vertexName).id();
     }
 
+    public Vertex convertToVertex(final String vertexName) {
+        return convertToVertex(graph, vertexName);
+    }
+
     public Vertex convertToVertex(final Graph graph, final String vertexName) {
         // all test graphs have "name" as a unique id which makes it easy to hardcode this...works for now
         return graph.traversal().V().has("name", vertexName).next();
