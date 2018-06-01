@@ -47,6 +47,7 @@ import java.util.function.Function;
  */
 public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Edge, Number>> {
 
+    @SuppressWarnings("WeakerAccess")
     public static final String SHORTEST_PATHS = "gremlin.shortestPathVertexProgram.shortestPaths";
 
     private static final String SOURCE_VERTEX_FILTER = "gremlin.shortestPathVertexProgram.sourceVertexFilter";
@@ -59,6 +60,10 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
     private static final String STATE = "gremlin.shortestPathVertexProgram.state";
     private static final String PATHS = "gremlin.shortestPathVertexProgram.paths";
     private static final String VOTE_TO_HALT = "gremlin.shortestPathVertexProgram.voteToHalt";
+
+    private static final int SEARCH = 0;
+    private static final int COLLECT_PATHS = 1;
+    private static final int UPDATE_HALTED_TRAVERSERS = 2;
 
     public static final PureTraversal<Vertex, ?> DEFAULT_VERTEX_FILTER_TRAVERSAL = new PureTraversal<>(new IdentityTraversal<>());
     public static final PureTraversal<Vertex, Edge> DEFAULT_EDGE_TRAVERSAL = new PureTraversal<>(__.bothE().asAdmin());
@@ -124,6 +129,11 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
         }
 
         this.haltedTraversers = TraversalVertexProgram.loadHaltedTraversers(configuration);
+        this.haltedTraversersIndex = new IndexedTraverserSet<>(v -> v);
+        for (final Traverser.Admin<Vertex> traverser : this.haltedTraversers) {
+            this.haltedTraversersIndex.add(traverser.split());
+        }
+        this.haltedTraversers.clear();
         this.memoryComputeKeys.add(MemoryComputeKey.of(SHORTEST_PATHS, Operator.addAll, true, !standalone));
     }
 
@@ -198,21 +208,14 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
 
     @Override
     public void setup(final Memory memory) {
-
-        this.haltedTraversersIndex = new IndexedTraverserSet<>(v -> v);
-        for (final Traverser.Admin<Vertex> traverser : this.haltedTraversers) {
-            this.haltedTraversersIndex.add(traverser.split());
-        }
-        this.haltedTraversers.clear();
-
         memory.set(VOTE_TO_HALT, true);
-        memory.set(STATE, State.SEARCH);
+        memory.set(STATE, SEARCH);
     }
 
     @Override
     public void execute(final Vertex vertex, final Messenger<Triplet<Path, Edge, Number>> messenger, final Memory memory) {
 
-        switch (memory.<State>get(STATE)) {
+        switch (memory.<Integer>get(STATE)) {
 
             case COLLECT_PATHS:
                 collectShortestPaths(vertex, memory);
@@ -298,15 +301,14 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
         }
         final boolean voteToHalt = memory.get(VOTE_TO_HALT);
         if (voteToHalt) {
-            final State state = memory.get(STATE);
-            if (state.equals(State.COLLECT_PATHS)) {
+            final int state = memory.get(STATE);
+            if (state == COLLECT_PATHS) {
                 if (this.standalone) return true;
-                memory.set(STATE, State.UPDATE_HALTED_TRAVERSERS);
+                memory.set(STATE, UPDATE_HALTED_TRAVERSERS);
                 return false;
             }
-            if (state.equals(State.UPDATE_HALTED_TRAVERSERS)) return true;
-            if (state.equals(State.COLLECT_PATHS)) memory.set(STATE, State.UPDATE_HALTED_TRAVERSERS);
-            else memory.set(STATE, State.COLLECT_PATHS);
+            if (state == UPDATE_HALTED_TRAVERSERS) return true;
+            else memory.set(STATE, COLLECT_PATHS);
             return false;
         } else {
             memory.set(VOTE_TO_HALT, true);
@@ -558,9 +560,5 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
                 return true;
             }
         };
-    }
-
-    private enum State {
-        SEARCH, COLLECT_PATHS, UPDATE_HALTED_TRAVERSERS
     }
 }
