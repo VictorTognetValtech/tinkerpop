@@ -210,6 +210,7 @@ public abstract class ShortestPathTest extends AbstractGremlinProcessTest {
         assertEquals(helper.makePath("marko", "lop", "josh"), traversal.next());
         assertFalse(traversal.hasNext());
     }
+
     @Test
     @LoadGraphWith(CREW)
     public void g_V_hasXname_danielX_shortestPath_targetXhasXname_stephenXX_edgesXbothEXusesXX() {

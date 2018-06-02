@@ -26,15 +26,13 @@ import org.apache.tinkerpop.gremlin.process.computer.traversal.step.map.VertexPr
 import org.apache.tinkerpop.gremlin.process.computer.util.AbstractVertexProgramBuilder;
 import org.apache.tinkerpop.gremlin.process.traversal.*;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
-import org.apache.tinkerpop.gremlin.process.traversal.lambda.ConstantTraversal;
-import org.apache.tinkerpop.gremlin.process.traversal.lambda.ElementValueTraversal;
-import org.apache.tinkerpop.gremlin.process.traversal.lambda.IdentityTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.ImmutablePath;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.IndexedTraverserSet;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.TraverserSet;
 import org.apache.tinkerpop.gremlin.process.traversal.util.PureTraversal;
 import org.apache.tinkerpop.gremlin.structure.*;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
+import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceFactory;
 import org.apache.tinkerpop.gremlin.util.NumberHelper;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
@@ -65,9 +63,11 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
     private static final int COLLECT_PATHS = 1;
     private static final int UPDATE_HALTED_TRAVERSERS = 2;
 
-    public static final PureTraversal<Vertex, ?> DEFAULT_VERTEX_FILTER_TRAVERSAL = new PureTraversal<>(new IdentityTraversal<>());
+    public static final PureTraversal<Vertex, ?> DEFAULT_VERTEX_FILTER_TRAVERSAL = new PureTraversal<>(
+            __.<Vertex> identity().asAdmin()); // todo: new IdentityTraversal<>()
     public static final PureTraversal<Vertex, Edge> DEFAULT_EDGE_TRAVERSAL = new PureTraversal<>(__.bothE().asAdmin());
-    public static final PureTraversal<Edge, Number> DEFAULT_DISTANCE_TRAVERSAL = new PureTraversal<>(new ConstantTraversal<>(1));
+    public static final PureTraversal<Edge, Number> DEFAULT_DISTANCE_TRAVERSAL = new PureTraversal<>(
+            __.<Edge> start().<Number> constant(1).asAdmin()); // todo: new ConstantTraversal<>(1)
 
     private TraverserSet<Vertex> haltedTraversers;
     private IndexedTraverserSet<Vertex, Vertex> haltedTraversersIndex;
@@ -133,7 +133,6 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
         for (final Traverser.Admin<Vertex> traverser : this.haltedTraversers) {
             this.haltedTraversersIndex.add(traverser.split());
         }
-        this.haltedTraversers.clear();
         this.memoryComputeKeys.add(MemoryComputeKey.of(SHORTEST_PATHS, Operator.addAll, true, !standalone));
     }
 
@@ -151,6 +150,7 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
             this.traversal.storeState(configuration, ProgramVertexProgramStep.ROOT_TRAVERSAL);
             configuration.setProperty(ProgramVertexProgramStep.STEP_ID, this.programStep.getId());
         }
+        TraversalVertexProgram.storeHaltedTraversers(configuration, this.haltedTraversers);
     }
 
     @Override
@@ -367,7 +367,9 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
             }
         }
         for (final Element element : elements) {
-            if (element != null) result = result.extend(element, Collections.emptySet());
+            if (element != null) {
+                result = result.extend(ReferenceFactory.detach(element), Collections.emptySet());
+            }
         }
         return result;
     }
@@ -378,27 +380,14 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
             filterTraversal.addStart(filterTraversal.getTraverserGenerator().generate(vertex, filterTraversal.getStartStep(), 1));
             return filterTraversal.hasNext();
         }
-        if (vertex.property(TraversalVertexProgram.HALTED_TRAVERSERS).isPresent()) return true;
-        for (final Traverser<?> traverser : this.haltedTraversers) {
-            if (vertex.equals(traverser.get())) return true;
-        }
-        return false;
+        return vertex.property(TraversalVertexProgram.HALTED_TRAVERSERS).isPresent();
     }
 
-    private boolean isEndVertex(final Vertex vertex, final Vertex startVertex) {
+    private boolean isEndVertex(final Vertex vertex) {
         final Traversal.Admin<Vertex, ?> filterTraversal = this.targetVertexFilterTraversal.getPure();
         //noinspection unchecked
         final Step<Vertex, Vertex> startStep = (Step<Vertex, Vertex>) filterTraversal.getStartStep();
-        if (this.standalone) {
-            filterTraversal.addStart(filterTraversal.getTraverserGenerator().generate(vertex, startStep, 1));
-        } else {
-            final Property<TraverserSet<Vertex>> haltedTraversers = startVertex.property(TraversalVertexProgram.HALTED_TRAVERSERS);
-            if (haltedTraversers.isPresent()) {
-                for (final Traverser.Admin<Vertex> traverser : haltedTraversers.value()) {
-                    filterTraversal.addStart(traverser.split(vertex, startStep));
-                }
-            }
-        }
+        filterTraversal.addStart(filterTraversal.getTraverserGenerator().generate(vertex, startStep, 1));
         return filterTraversal.hasNext();
     }
 
@@ -469,7 +458,7 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
 
             for (final Pair<Number, Set<Path>> pair : paths.values()) {
                 for (final Path path : pair.getValue1()) {
-                    if (isEndVertex(path.get(path.size() - 1), path.get(0))) {
+                    if (isEndVertex(vertex)) {
                         result.add(path);
                     }
                 }
@@ -521,7 +510,7 @@ public class ShortestPathVertexProgram implements VertexProgram<Triplet<Path, Ed
         public Builder distanceProperty(final String distance) {
             //noinspection unchecked
             return distance != null
-                    ? distanceTraversal((Traversal) new ElementValueTraversal<>(distance))
+                    ? distanceTraversal(__.values(distance)) // todo: (Traversal) new ElementValueTraversal<>(distance)
                     : distanceTraversal(DEFAULT_DISTANCE_TRAVERSAL.getPure());
         }
 

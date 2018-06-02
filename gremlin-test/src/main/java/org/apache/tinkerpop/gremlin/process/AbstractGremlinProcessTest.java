@@ -119,7 +119,7 @@ public abstract class AbstractGremlinProcessTest extends AbstractGremlinTest {
 
     public static <T> void checkResults(final List<T> expectedResults, final Traversal<?, T> traversal) {
         final List<T> results = traversal.toList();
-        assertFalse(traversal.hasNext());
+        assertThat(traversal.hasNext(), is(false));
         if (expectedResults.size() != results.size()) {
             logger.error("Expected results: " + expectedResults);
             logger.error("Actual results:   " + results);
@@ -128,20 +128,19 @@ public abstract class AbstractGremlinProcessTest extends AbstractGremlinTest {
 
         for (T t : results) {
             if (t instanceof Map) {
-                assertThat("Checking map result existence: " + t, expectedResults.stream().filter(e -> e instanceof Map).filter(e -> internalCheckMap((Map) e, (Map) t)).findAny().isPresent(), is(true));
+                assertThat("Checking map result existence: " + t, expectedResults.stream().anyMatch(e -> e instanceof Map && internalCheckMap((Map) e, (Map) t)), is(true));
             } else if (t instanceof List) {
-                assertThat("Checking list result existence: " + t, expectedResults.stream().filter(e -> e instanceof List).filter(e -> internalCheckList((List) e, (List) t)).findAny().isPresent(), is(true));
+                assertThat("Checking list result existence: " + t, expectedResults.stream().anyMatch(e -> e instanceof List && internalCheckList((List) e, (List) t)), is(true));
             } else {
                 assertThat("Checking result existence: " + t, expectedResults.contains(t), is(true));
             }
         }
         final Map<T, Long> expectedResultsCount = new HashMap<>();
         final Map<T, Long> resultsCount = new HashMap<>();
+        expectedResults.forEach(t -> MapHelper.incr(expectedResultsCount, t, 1L));
+        results.forEach(t -> MapHelper.incr(resultsCount, t, 1L));
         assertEquals("Checking indexing is equivalent", expectedResultsCount.size(), resultsCount.size());
-        expectedResults.forEach(t -> MapHelper.incr(expectedResultsCount, t, 1l));
-        results.forEach(t -> MapHelper.incr(resultsCount, t, 1l));
         expectedResultsCount.forEach((k, v) -> assertEquals("Checking result group counts", v, resultsCount.get(k)));
-        assertThat(traversal.hasNext(), is(false));
     }
 
     public static <T> void checkResults(final Map<T, Long> expectedResults, final Traversal<?, T> traversal) {

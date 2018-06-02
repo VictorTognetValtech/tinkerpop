@@ -243,7 +243,7 @@ public abstract class AbstractGremlinTest {
     public void printTraversalForm(final Traversal traversal) {
         logger.info(String.format("Testing: %s", name.getMethodName()));
         logger.info("   pre-strategy:" + traversal);
-        traversal.hasNext();
+        if (!traversal.asAdmin().isLocked()) traversal.asAdmin().applyStrategies();
         logger.info("  post-strategy:" + traversal);
         verifyUniqueStepIds(traversal.asAdmin());
     }
